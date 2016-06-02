@@ -1,3 +1,4 @@
+'use strict';
 var panic = require('panic-server');
 var spawn = require('child_process').spawn;
 var path = require('path');
@@ -7,19 +8,22 @@ var ports = require('../ports');
 
 var wd = require('selenium-webdriver');
 
-function open(url) {
+var jsonData = path.join(__dirname, '..', '..', 'delete-me.json');
+
+function open(browser) {
 	var driver = new wd.Builder()
-		.forBrowser('phantomjs')
+		.forBrowser(browser)
 		.build();
 
-	driver.get(url);
+	driver.get(`http://localhost:${ports.panic}/index.html`);
 
 	return driver;
 }
 
-var homepage = 'http://localhost:' + ports.panic + '/index.html';
-open(homepage);
-open(homepage);
+var drivers = [
+	open('phantomjs'),
+	open('phantomjs')
+];
 
 var staticServer = new http.Server(function (req, res) {
 	if (req.url === '/') {
@@ -81,14 +85,13 @@ before(function () {
 
 var scope = {
 	uniqueKey: Math.random().toString(16).slice(2),
-	file: path.join(process.cwd(), 'delete-me.json'),
-	gunFile: path.join(__dirname, '..', 'gun.js'),
+	file: jsonData,
 	'@scope': true
 }
 
-describe('The holy grail', function () {
+describe('Gun', function () {
 
-	it('should allow full recovery', function * () {
+	it('should be able to recover from disastrous failure', function * () {
 		this.timeout(1500000);
 
 		yield browsers.run(function () {
@@ -152,6 +155,11 @@ describe('The holy grail', function () {
 
 after(function () {
 	if (server.length) {
+
+		try {
+			fs.unlinkSync(jsonData);
+		} catch (e) {}
+
 		return server.run(function () {
 			process.exit(0);
 		});
