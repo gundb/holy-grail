@@ -1,6 +1,5 @@
 /* global Gun */
 /* eslint-env mocha */
-/* eslint-disable no-console */
 'use strict';
 
 const panic = require('panic-server');
@@ -8,28 +7,6 @@ const wd = require('selenium-webdriver');
 const config = require('../panic.config.js');
 
 let drivers = [];
-
-panic.clients.on('add', function (client) {
-  client.socket.on('log', console.log);
-
-  if (client.matches(/Node/)) {
-    client.run(function () {
-      this.set('panic-client', require('panic-client'));
-    });
-  } else {
-    client.run(function () {
-      this.set('panic-client', window.panic);
-    });
-  }
-
-  client.run(function (job) {
-    const socket = this.get('panic-client').socket;
-    job.constructor.prototype.log = function () {
-      const args = Array.prototype.slice.call(arguments);
-      socket.emit.apply(socket, ['log'].concat(args));
-    };
-  });
-});
 
 function open (browser) {
   const driver = new wd.Builder()
@@ -86,6 +63,22 @@ function startServer (job) {
 }
 
 /**
+ * Creates a gun instance and exposes it as `.get('gun')`.
+ * The props given are given to the gun constructor.
+ * Depends on the `.get('get')` env var.
+ * @return {String} - The key to retrieve.
+ */
+function setupBrowserGun () {
+  const root = Gun(this.props);
+
+  const key = this.get('key');
+  const gun = root.get(key);
+  this.set('gun', gun);
+
+  return key;
+}
+
+/**
  * Injects a script into the page.
  * @return {undefined}
  */
@@ -138,31 +131,21 @@ describe('Gun', function () {
     yield panic.clients.run(function () {
       this.set('key', this.props.key);
     }, {
-      key: Math.random().toString(36).slice(2),
+      key: config.browser.key,
     });
 
   });
 
   it('should allow data sync between clients', function * () {
     this.timeout(10000);
-    console.log('Setting up gun instances');
 
-    yield browsers.run(function () {
-      const root = Gun({
-        peers: this.props.peers,
-      });
-
-      const key = this.get('key');
-      const gun = root.get(key);
-      this.set('gun', gun);
-    }, {
+    yield browsers.run(setupBrowserGun, {
       peers: [
         `${config.server.url}/gun`,
       ],
     });
 
     // Alice saves some data
-    console.log('Alice saving data');
     yield alice.run(function () {
       const gun = this.get('gun');
 
@@ -172,7 +155,6 @@ describe('Gun', function () {
     });
 
     // Bob waits for it to show up.
-    console.log('Bob waiting for data');
     yield bob.run(function () {
       const done = this.async();
       const gun = this.get('gun');
@@ -185,10 +167,8 @@ describe('Gun', function () {
     });
   });
 
-  it.skip('should recover data from clients after data loss', function * () {
+  it('should recover data from clients after data loss', function * () {
     this.timeout(15000);
-
-    console.log('Server going offline...');
 
     // End the server, destroy the data.
     yield server.run(function () {
@@ -203,8 +183,6 @@ describe('Gun', function () {
       file: config.server.file,
     });
 
-    console.log('Alice making conflicting change');
-
     // Make two conflicting updates while offline.
     yield alice.run(function () {
       const done = this.async();
@@ -213,8 +191,6 @@ describe('Gun', function () {
       gun.path('text').put('A conflicting update');
       setTimeout(done, 50);
     });
-
-    console.log('Bob making conflicting change');
 
     yield bob.run(function () {
       const gun = this.get('gun');
@@ -228,15 +204,32 @@ describe('Gun', function () {
       panic: config.panic,
     });
 
-    console.log('Waiting for server to restart...');
     yield server.atLeast(1);
-
-    console.log('Starting the server again');
 
     // Start up the gun/http server again.
     yield server.run(startServer, config.server);
 
-    console.log('Browsers waiting for convergence');
+    yield browsers.run(function () {
+      location.reload();
+    });
+
+    yield browsers.atLeast(2);
+
+    yield browsers.run(function () {
+      this.set('key', this.props.key);
+    }, {
+      key: config.browser.key,
+    });
+
+    yield browsers.run(loadScript, {
+      src: `${config.server.url}/gun.js`,
+    });
+
+    yield browsers.run(setupBrowserGun, {
+      peers: [
+        `${config.server.url}/gun`,
+      ],
+    });
 
     // Expect both browsers to converge on the newer value
     // (must be running on the same machine, sharing a clock).
@@ -250,8 +243,6 @@ describe('Gun', function () {
         }
       });
     });
-
-    console.log('Test finished!');
 
   });
 

@@ -23,7 +23,7 @@ const server = {
   html: path.join(__dirname, 'test/index.html'),
 
   /** @type {String} - The absolute path to gun. */
-  gun: require.resolve('../../gun'),
+  gun: require.resolve('gun'),
 
 };
 
@@ -39,6 +39,9 @@ const browser = {
   types: Array(0).fill({
     browserName: 'phantomjs',
   }),
+
+  /** @type {String} - The key gun should use. */
+  key: Math.random().toString(36).slice(2),
 };
 
 module.exports = {
